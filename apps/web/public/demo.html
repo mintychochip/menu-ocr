@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Loading Demo Menu...</title>
+  <script>
+    const menu = {
+      id: 'demo-menu-123',
+      name: 'Burger Joint',
+      description: 'Fresh burgers and fries',
+      categories: [
+        { id: 'cat-1', name: 'Burgers', order: 0, items: [
+          { id: 'item-1', name: 'Classic Cheeseburger', price: 12.99, categoryId: 'cat-1', order: 0, description: 'Beef patty with cheddar' },
+          { id: 'item-2', name: 'Bacon Burger', price: 14.99, categoryId: 'cat-1', order: 1, description: 'Crispy bacon on top' }
+        ]},
+        { id: 'cat-2', name: 'Sides', order: 1, items: [
+          { id: 'item-3', name: 'French Fries', price: 4.99, categoryId: 'cat-2', order: 0, description: 'Crispy golden fries' },
+          { id: 'item-4', name: 'Onion Rings', price: 5.99, categoryId: 'cat-2', order: 1, description: 'Beer battered' }
+        ]},
+        { id: 'cat-3', name: 'Drinks', order: 2, items: [
+          { id: 'item-5', name: 'Soda', price: 2.99, categoryId: 'cat-3', order: 0, description: 'Coke, Sprite, Root Beer' },
+          { id: 'item-6', name: 'Milkshake', price: 6.99, categoryId: 'cat-3', order: 1, description: 'Vanilla, Chocolate, Strawberry' }
+        ]}
+      ],
+      template: 'minimal',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isPublished: true,
+      slug: 'burger-joint'
+    };
+
+    const storeData = {
+      menus: [menu],
+      currentMenu: menu,
+      ocrProgress: { status: 'idle', progress: 0, message: '' },
+      parsedData: null
+    };
+
+    localStorage.setItem('menu-ocr-storage', JSON.stringify(storeData));
+    window.location.href = '/preview/demo-menu-123';
+  </script>
+</head>
+<body>
+  <p>Loading demo menu...</p>
+</body>
+</html>
