@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Edit2, ExternalLink, QrCode } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import MenuRenderer from '../components/MenuRenderer'
 import QRCodeDisplay from '../components/QRCodeDisplay'
 import { useMenuStore } from '../stores/menuStore'
@@ -8,12 +8,57 @@ import { useMenuStore } from '../stores/menuStore'
 export default function Preview() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { menus } = useMenuStore()
-  const menu = id ? menus.find(m => m.id === id) || null : null
-  
+  const { menus, loadMenu, isLoading, error } = useMenuStore()
+  const [menu, setMenu] = useState(menus.find(m => m.id === id) || null)
+  const [localLoading, setLocalLoading] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
   const [showQR, setShowQR] = useState(false)
 
-  if (!menu || !id) {
+  // Try to load menu from backend if not found locally
+  useEffect(() => {
+    const fetchMenu = async () => {
+      if (!id) return
+
+      // Check local store first
+      const localMenu = menus.find(m => m.id === id)
+      if (localMenu) {
+        setMenu(localMenu)
+        return
+      }
+
+      // Try to fetch from backend
+      setLocalLoading(true)
+      setLocalError(null)
+
+      try {
+        const fetchedMenu = await loadMenu(id)
+        if (fetchedMenu) {
+          setMenu(fetchedMenu)
+        } else {
+          setLocalError('Menu not found')
+        }
+      } catch (err) {
+        setLocalError('Failed to load menu')
+      } finally {
+        setLocalLoading(false)
+      }
+    }
+
+    fetchMenu()
+  }, [id, menus, loadMenu])
+
+  if (isLoading || localLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-gray-600">
+          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          Loading menu...
+        </div>
+      </div>
+    )
+  }
+
+  if (error || localError || !menu || !id) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

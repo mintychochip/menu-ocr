@@ -1,21 +1,25 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, FileText, Upload, Loader2 } from 'lucide-react'
+import { ArrowLeft, Plus, FileText, Upload, Loader2, AlertCircle, Edit3 } from 'lucide-react'
 import FileUpload from '../components/FileUpload'
 import OCRProcessor from '../components/OCRProcessor'
+import ManualEntryModal from '../components/ManualEntryModal'
 import { useMenuStore } from '../stores/menuStore'
-import type { ParsedMenu } from '@menu-ocr/shared'
+import type { ParsedMenu, OCRQuality } from '@menu-ocr/shared'
 
 export default function MenuBuilder() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const { menus, addMenu, updateMenu } = useMenuStore()
-  
+
   const [files, setFiles] = useState<File[]>([])
   const [ocrText, setOcrText] = useState<string>('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [showOCR, setShowOCR] = useState(false)
   const [ocrError, setOcrError] = useState<string | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [parseError, setParseError] = useState<string | null>(null)
+  const [showManualEntry, setShowManualEntry] = useState(false)
   const [mode, setMode] = useState<'choose' | 'ocr' | 'blank'>('choose')
 
   // If an ID is provided, redirect to the editor
@@ -33,11 +37,12 @@ export default function MenuBuilder() {
     }
   }
 
-  const handleOCRComplete = (text: string) => {
+  const handleOCRComplete = (text: string, _parsedData: ParsedMenu, quality: OCRQuality) => {
     setOcrText(text)
     setIsProcessing(true)
     setOcrError(null)
-    parseMenuWithLLM(text)
+    setParseError(null)
+    parseMenuWithLLM(text, quality)
   }
 
   const handleOCRError = (error: string) => {
@@ -45,9 +50,28 @@ export default function MenuBuilder() {
     setIsProcessing(false)
   }
 
-  const createBlankMenu = () => {
+  const handleManualEntrySave = (menuData: ParsedMenu) => {
     const menuId = crypto.randomUUID()
-    addMenu({
+    const newMenu = {
+      ...menuData,
+      id: menuId,
+      slug: `menu-${menuId.slice(0, 8)}`,
+      template: 'minimal',
+      categories: menuData.categories || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isPublished: false
+    }
+    
+    addMenu(newMenu as any)
+    setShowManualEntry(false)
+    setParseError(null)
+    navigate(`/editor/${menuId}`)
+  }
+
+  const createBlankMenu = async () => {
+    const menuId = crypto.randomUUID()
+    const newMenu = {
       id: menuId,
       name: 'Untitled Menu',
       slug: `menu-${menuId.slice(0, 8)}`,
@@ -61,11 +85,19 @@ export default function MenuBuilder() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       isPublished: false
-    } as any)
-    navigate(`/editor/${menuId}`)
+    }
+
+    // Save menu with backend sync
+    const savedMenuId = await addMenu(newMenu as any, true)
+
+    if (!savedMenuId) {
+      setSyncError('Menu created but failed to sync with backend')
+    }
+
+    navigate(`/editor/${savedMenuId || menuId}`)
   }
 
-  const parseMenuWithLLM = async (text: string) => {
+  const parseMenuWithLLM = async (text: string, quality: OCRQuality) => {
     try {
       const response = await fetch('/api/parse-menu', {
         method: 'POST',
@@ -73,12 +105,27 @@ export default function MenuBuilder() {
         body: JSON.stringify({ text })
       })
       
-      if (!response.ok) throw new Error('Failed to parse menu')
+      const data = await response.json()
       
-      const parsedMenu: ParsedMenu = await response.json()
+      // Check for error response from API
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Failed to parse menu')
+      }
+      
+      const parsedMenu: ParsedMenu = data
+      
+      // Check if we got valid items
+      if (!parsedMenu.items || parsedMenu.items.length === 0) {
+        // If OCR quality was poor, offer manual entry
+        if (quality === 'poor' || quality === 'uncertain') {
+          setParseError('We could not automatically extract menu items from this image.')
+          setIsProcessing(false)
+          return
+        }
+      }
       
       const menuId = crypto.randomUUID()
-      addMenu({
+      const newMenu = {
         ...parsedMenu,
         id: menuId,
         slug: `menu-${menuId.slice(0, 8)}`,
@@ -87,37 +134,23 @@ export default function MenuBuilder() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         isPublished: false
-      } as any)
-      
-      navigate(`/editor/${menuId}`)
+      }
+
+      // Save menu with backend sync
+      const savedMenuId = await addMenu(newMenu as any, true)
+
+      if (savedMenuId) {
+        navigate(`/editor/${savedMenuId}`)
+      } else {
+        setSyncError('Menu created but failed to sync with backend')
+        navigate(`/editor/${menuId}`)
+      }
     } catch (error) {
       console.error('Error parsing menu:', error)
-      // Create basic menu from raw text as fallback
-      const menuId = crypto.randomUUID()
-      addMenu({
-        id: menuId,
-        name: 'Untitled Menu',
-        slug: `menu-${menuId.slice(0, 8)}`,
-        categories: [{
-          id: 'cat-1',
-          name: 'Uncategorized',
-          order: 0,
-          items: [{
-            id: 'item-1',
-            name: 'Sample Item',
-            price: 0,
-            categoryId: 'cat-1',
-            order: 0,
-            description: text.slice(0, 100) + '...'
-          }]
-        }],
-        template: 'minimal',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isPublished: false
-      } as any)
-      navigate(`/editor/${menuId}`)
-    } finally {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to parse menu'
+      
+      // Don't create fake menu - show error with manual entry option
+      setParseError(errorMessage)
       setIsProcessing(false)
     }
   }
@@ -188,6 +221,7 @@ export default function MenuBuilder() {
                 files={files} 
                 onComplete={handleOCRComplete}
                 onError={handleOCRError}
+                onManualEntry={() => setShowManualEntry(true)}
               />
             )}
             
@@ -196,7 +230,43 @@ export default function MenuBuilder() {
                 Error: {ocrError}
               </div>
             )}
-            
+
+            {syncError && (
+              <div className="mt-4 p-4 bg-yellow-50 text-yellow-700 rounded-lg">
+                Warning: {syncError}
+              </div>
+            )}
+
+            {parseError && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-amber-800 mb-1">
+                      Could not parse menu automatically
+                    </h4>
+                    <p className="text-sm text-amber-700 mb-3">
+                      {parseError} You can enter your menu items manually instead.
+                    </p>
+                    <button
+                      onClick={() => setShowManualEntry(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 
+                                 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                      Enter Menu Manually
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <ManualEntryModal 
+              isOpen={showManualEntry}
+              onClose={() => setShowManualEntry(false)}
+              onSave={handleManualEntrySave}
+            />
+
             {isProcessing && (
               <div className="mt-6 text-center">
                 <div className="inline-flex items-center gap-2 text-gray-600">

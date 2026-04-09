@@ -6,22 +6,45 @@ import type { Menu } from '@menu-ocr/shared'
 
 export default function MenuView() {
   const { slug } = useParams<{ slug: string }>()
-  const { menus } = useMenuStore()
+  const { menus, loadMenu } = useMenuStore()
   const [menu, setMenu] = useState<Menu | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Find menu by slug
-    const foundMenu = menus.find(m => m.slug === slug)
-    
-    if (foundMenu) {
-      setMenu(foundMenu)
-      setLoading(false)
-    } else {
-      // In a real app, fetch from API
-      setLoading(false)
+    const fetchMenu = async () => {
+      if (!slug) {
+        setLoading(false)
+        return
+      }
+
+      // Find menu by slug in local store
+      const foundMenu = menus.find(m => m.slug === slug)
+
+      if (foundMenu) {
+        setMenu(foundMenu)
+        setLoading(false)
+      } else {
+        // Try to fetch from backend using menu ID extracted from slug
+        // Slug format: menu-{id}
+        const menuId = slug.replace('menu-', '')
+        try {
+          const fetchedMenu = await loadMenu(menuId)
+          if (fetchedMenu) {
+            setMenu(fetchedMenu)
+          } else {
+            setError('Menu not found')
+          }
+        } catch (err) {
+          setError('Failed to load menu')
+        } finally {
+          setLoading(false)
+        }
+      }
     }
-  }, [slug, menus])
+
+    fetchMenu()
+  }, [slug, menus, loadMenu])
 
   if (loading) {
     return (

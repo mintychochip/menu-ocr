@@ -4,8 +4,11 @@ export async function handleParseMenu(
   request: Request & { params: Record<string, string> },
   env: Env
 ): Promise<Response> {
+  let rawText = ''
+  
   try {
     const { text } = await request.json() as { text: string }
+    rawText = text
 
     if (!text || text.trim().length === 0) {
       return new Response(JSON.stringify({ error: 'No text provided' }), {
@@ -62,12 +65,14 @@ Return ONLY valid JSON in this exact format:
       const error = await response.text()
       console.error('Groq API error:', error)
       
-      // Return basic fallback parsing
+      // Return error response - don't create fake menu items
       return new Response(JSON.stringify({
-        name: 'Untitled Menu',
-        items: parseBasicMenu(text),
-        categories: extractCategories(parseBasicMenu(text))
+        error: 'Could not parse menu',
+        rawText,
+        items: [],
+        categories: []
       }), {
+        status: 422,
         headers: { 'Content-Type': 'application/json' }
       })
     }
@@ -103,18 +108,20 @@ Return ONLY valid JSON in this exact format:
     } catch (parseError) {
       console.error('JSON parse error:', parseError)
       
-      // Fallback to basic parsing
+      // Return error response - don't create fake menu items
       return new Response(JSON.stringify({
-        name: 'Untitled Menu',
-        items: parseBasicMenu(text),
-        categories: extractCategories(parseBasicMenu(text))
+        error: 'Could not parse menu',
+        rawText,
+        items: [],
+        categories: []
       }), {
+        status: 422,
         headers: { 'Content-Type': 'application/json' }
       })
     }
   } catch (error) {
     console.error('Error in parse-menu:', error)
-    return new Response(JSON.stringify({ error: 'Failed to parse menu' }), {
+    return new Response(JSON.stringify({ error: 'Failed to parse menu', rawText }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     })
@@ -146,7 +153,7 @@ function parseBasicMenu(text: string): any[] {
     }
     name = name.slice(0, 50).trim()
     
-    if (name && name.length > 2) {
+    if (name && name.length > 2 && price > 0) {
       items.push({
         name,
         price,
@@ -156,12 +163,8 @@ function parseBasicMenu(text: string): any[] {
     }
   }
   
-  return items.length > 0 ? items : [{
-    name: 'Menu Item',
-    price: 0,
-    description: text.slice(0, 100),
-    category: 'Uncategorized'
-  }]
+  // Return empty array if nothing found - NO PLACEHOLDER ITEMS
+  return items
 }
 
 function extractCategories(items: any[]): string[] {

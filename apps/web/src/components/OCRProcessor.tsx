@@ -1,10 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { createWorker, type Worker } from 'tesseract.js'
-import { Loader2, CheckCircle, AlertCircle, FileText } from 'lucide-react'
+import { Loader2, CheckCircle, AlertCircle, FileText, RefreshCw, Edit3, ArrowRight, AlertTriangle } from 'lucide-react'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import * as pdfjs from 'pdfjs-dist'
-import type { OCRProgress, ParsedMenu } from '@menu-ocr/shared'
+import type { OCRProgress, ParsedMenu, OCRQuality } from '@menu-ocr/shared'
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -15,8 +15,9 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pd
 
 interface OCRProcessorProps {
   files: File[]
-  onComplete: (text: string, parsedData: ParsedMenu) => void
+  onComplete: (text: string, parsedData: ParsedMenu, quality: OCRQuality) => void
   onError: (error: string) => void
+  onManualEntry?: () => void
   className?: string
 }
 
@@ -24,12 +25,14 @@ export default function OCRProcessor({
   files,
   onComplete,
   onError,
+  onManualEntry,
   className,
 }: OCRProcessorProps) {
   const [progress, setProgress] = useState<OCRProgress>({
     status: 'idle',
     progress: 0,
     message: '',
+    quality: 'uncertain',
   })
   const workerRef = useRef<Worker | null>(null)
   const abortRef = useRef(false)
@@ -201,6 +204,47 @@ Rules:
     }
   }
 
+  // Detect OCR text quality
+  const detectQuality = useCallback((text: string): OCRQuality => {
+    if (!text || text.trim().length === 0) {
+      return 'poor'
+    }
+
+    const trimmedText = text.trim()
+    const words = trimmedText.split(/\s+/).filter(w => w.length > 0)
+    
+    // Too short - likely garbled or empty
+    if (words.length < 5) {
+      return 'poor'
+    }
+
+    // Check for excessive random/special characters (garbled text)
+    const specialChars = trimmedText.replace(/[a-zA-Z0-9\s\.,;:'"\-()$]/g, '')
+    const specialCharRatio = specialChars.length / trimmedText.length
+    if (specialCharRatio > 0.3) {
+      return 'poor'
+    }
+
+    // Check for random character patterns (common in garbled OCR)
+    const randomPatternMatches = trimmedText.match(/[^\w\s]{3,}|[@#$%^&*]{2,}/g)
+    if (randomPatternMatches && randomPatternMatches.length > 2) {
+      return 'poor'
+    }
+
+    // Check for very short average word length (random characters)
+    const avgWordLength = words.reduce((sum, w) => sum + w.length, 0) / words.length
+    if (avgWordLength < 2 && words.length > 10) {
+      return 'poor'
+    }
+
+    // Mixed signals - some valid text but quality issues
+    if (specialCharRatio > 0.15 || (avgWordLength < 3 && words.length > 20)) {
+      return 'uncertain'
+    }
+
+    return 'good'
+  }, [])
+
   const startProcessing = useCallback(async () => {
     if (files.length === 0) return
     
@@ -240,11 +284,15 @@ Rules:
         throw new Error('Processing was cancelled')
       }
 
+      // Detect quality of OCR text
+      const quality = detectQuality(allText)
+
       // Now parse with Groq
       setProgress({
         status: 'recognizing',
         progress: 70,
         message: 'Parsing menu structure with AI...',
+        quality,
       })
 
       const parsedData = await processWithGroq(allText)
@@ -253,21 +301,23 @@ Rules:
         status: 'complete',
         progress: 100,
         message: 'Processing complete!',
+        quality,
       })
 
-      onComplete(allText, parsedData)
+      onComplete(allText, parsedData, quality)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       setProgress({
         status: 'error',
         progress: 0,
         message: errorMessage,
+        quality: 'poor',
       })
       onError(errorMessage)
     } finally {
       cleanup()
     }
-  }, [files, onComplete, onError, cleanup])
+  }, [files, onComplete, onError, cleanup, detectQuality])
 
   const cancelProcessing = useCallback(() => {
     abortRef.current = true
@@ -276,13 +326,34 @@ Rules:
       status: 'idle',
       progress: 0,
       message: '',
+      quality: 'uncertain',
     })
   }, [cleanup])
+
+  const handleQualityDecision = useCallback((decision: 'retry' | 'continue' | 'manual') => {
+    if (decision === 'retry') {
+      setProgress({
+        status: 'idle',
+        progress: 0,
+        message: '',
+        quality: 'uncertain',
+      })
+      // Give time for UI to update then restart
+      setTimeout(() => startProcessing(), 100)
+    } else if (decision === 'manual') {
+      onManualEntry?.()
+    } else if (decision === 'continue') {
+      // User wants to continue despite poor quality
+      setProgress(prev => ({ ...prev, qualityWarningShown: true }))
+    }
+  }, [onManualEntry, startProcessing])
 
   const getStatusIcon = () => {
     switch (progress.status) {
       case 'complete':
-        return <CheckCircle className="w-5 h-5 text-green-500" />
+        return progress.quality === 'poor' 
+          ? <AlertTriangle className="w-5 h-5 text-amber-500" />
+          : <CheckCircle className="w-5 h-5 text-green-500" />
       case 'error':
         return <AlertCircle className="w-5 h-5 text-red-500" />
       case 'idle':
@@ -291,6 +362,51 @@ Rules:
         return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
     }
   }
+
+  // Quality warning UI
+  const QualityWarning = () => (
+    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          <h4 className="font-semibold text-amber-800 mb-1">
+            Low quality scan detected
+          </h4>
+          <p className="text-sm text-amber-700 mb-3">
+            The text extracted looks garbled (like &quot;SATERMERIEAND | | Sik meron...&quot;). 
+            This happens with blurry photos or poor lighting.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleQualityDecision('retry')}
+              className="flex items-center gap-1.5 px-3 py-2 bg-amber-100 hover:bg-amber-200 
+                         text-amber-800 text-sm font-medium rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Try Again
+            </button>
+            <button
+              onClick={() => handleQualityDecision('manual')}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-gray-50 
+                         border border-gray-300 text-gray-700 text-sm font-medium 
+                         rounded-lg transition-colors"
+            >
+              <Edit3 className="w-4 h-4" />
+              Enter Manually
+            </button>
+            <button
+              onClick={() => handleQualityDecision('continue')}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 
+                         text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Continue Anyway
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className={cn('space-y-4', className)}>
@@ -335,6 +451,11 @@ Rules:
                 </button>
               </div>
             </>
+          )}
+
+          {/* Quality Warning for poor quality scans */}
+          {progress.status === 'complete' && progress.quality === 'poor' && !progress.qualityWarningShown && (
+            <QualityWarning />
           )}
         </div>
       )}
