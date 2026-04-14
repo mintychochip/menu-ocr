@@ -38,7 +38,6 @@ describe('OCRProcessor', () => {
   })
 
   it('starts processing on button click', async () => {
-    const user = userEvent.setup()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
     
     render(
@@ -49,6 +48,7 @@ describe('OCRProcessor', () => {
       />
     )
 
+    const user = userEvent.setup()
     const startButton = screen.getByText(/start ocr processing/i)
     await user.click(startButton)
 
@@ -58,7 +58,6 @@ describe('OCRProcessor', () => {
   })
 
   it('shows progress indicator', async () => {
-    const user = userEvent.setup()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
     
     render(
@@ -69,6 +68,7 @@ describe('OCRProcessor', () => {
       />
     )
 
+    const user = userEvent.setup()
     const startButton = screen.getByText(/start ocr processing/i)
     await user.click(startButton)
 
@@ -78,7 +78,6 @@ describe('OCRProcessor', () => {
   })
 
   it('allows canceling processing', async () => {
-    const user = userEvent.setup()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
     
     render(
@@ -89,6 +88,7 @@ describe('OCRProcessor', () => {
       />
     )
 
+    const user = userEvent.setup()
     const startButton = screen.getByText(/start ocr processing/i)
     await user.click(startButton)
 
@@ -103,7 +103,6 @@ describe('OCRProcessor', () => {
   })
 
   it('processes PDF files differently', async () => {
-    const user = userEvent.setup()
     const pdfFile = new File(['pdf content'], 'menu.pdf', { type: 'application/pdf' })
     
     render(
@@ -114,6 +113,7 @@ describe('OCRProcessor', () => {
       />
     )
 
+    const user = userEvent.setup()
     const startButton = screen.getByText(/start ocr processing/i)
     await user.click(startButton)
 

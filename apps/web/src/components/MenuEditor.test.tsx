@@ -77,10 +77,9 @@ describe('MenuEditor', () => {
   })
 
   it('allows adding a new category', async () => {
-    const user = userEvent.setup()
-    
     render(<MenuEditor menu={mockMenu} />)
     
+    const user = userEvent.setup()
     const addButton = screen.getByText('Add New Category')
     await user.click(addButton)
     
@@ -95,10 +94,9 @@ describe('MenuEditor', () => {
   })
 
   it('allows expanding/collapsing categories', async () => {
-    const user = userEvent.setup()
-    
     render(<MenuEditor menu={mockMenu} />)
     
+    const user = userEvent.setup()
     // Category should be expanded by default
     expect(screen.getByText('Caesar Salad')).toBeVisible()
     
@@ -111,10 +109,9 @@ describe('MenuEditor', () => {
   })
 
   it('allows editing item inline', async () => {
-    const user = userEvent.setup()
-    
     render(<MenuEditor menu={mockMenu} />)
     
+    const user = userEvent.setup()
     // Find edit buttons (pencil icons)
     const editButtons = screen.getAllByRole('button')
     const editButton = editButtons.find(btn => btn.querySelector('svg'))
@@ -142,12 +139,12 @@ describe('MenuEditor', () => {
   })
 
   it('allows deleting categories', async () => {
-    const user = userEvent.setup()
-    
     // Mock confirm dialog
     vi.stubGlobal('confirm', () => true)
     
     render(<MenuEditor menu={mockMenu} />)
+    
+    const user = userEvent.setup()
     
     // Find delete button (trash icon)
     const deleteButtons = screen.getAllByRole('button')
