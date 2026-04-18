@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useMenuStore } from './menuStore'
 import type { Menu } from '@menu-ocr/shared'
 
@@ -15,6 +15,15 @@ describe('menuStore', () => {
       },
       parsedData: null,
     })
+    // Mock fetch to prevent relative URL errors in tests
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: 'test-id' }),
+    } as Response)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   describe('menu management', () => {
